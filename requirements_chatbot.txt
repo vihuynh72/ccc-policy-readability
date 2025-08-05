@@ -1,0 +1,4 @@
+flask==2.3.3
+flask-cors==4.0.0
+boto3>=1.34.0
+botocore>=1.34.0
