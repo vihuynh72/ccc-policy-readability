@@ -15,17 +15,18 @@ st.title("Simple RAG Chatbot")
 def setup_bedrock():
     return boto3.client(
         'bedrock-agent-runtime',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_DEFAULT_REGION')
+        aws_access_key_id=os.getenv('ASIA32HENBHHFBKWWTGH'),
+        aws_secret_access_key=os.getenv('Qa6KhfaopmwzbcfgqPjxIfXU0UbxWP6LAvoJZxXP'),
+        region_name=os.getenv('us-west-2')
     )
+
 
 # Initialize
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 bedrock = setup_bedrock()
-kb_id = os.getenv('KNOWLEDGE_BASE_ID')
+kb_id = os.getenv('AQLWWQKTWX')
 
 # Display chat history
 for message in st.session_state.messages:
