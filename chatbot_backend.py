@@ -6,6 +6,43 @@ import json
 app = Flask(__name__)
 CORS(app)
 
+def is_better_title(new_title, existing_title):
+    """Determine if new title is better than existing (prefer plain language over numbers)"""
+    if not existing_title:
+        return True
+    if not new_title:
+        return False
+    
+    # Prefer titles with letters over pure numbers
+    new_has_letters = any(c.isalpha() for c in new_title)
+    existing_has_letters = any(c.isalpha() for c in existing_title)
+    
+    if new_has_letters and not existing_has_letters:
+        return True
+    if existing_has_letters and not new_has_letters:
+        return False
+    
+    # If both have letters or both are numeric, prefer longer title
+    return len(new_title) > len(existing_title)
+
+def normalize_url(url):
+    """Normalize URL to catch duplicates with different formats"""
+    if not url:
+        return url
+    
+    # Remove trailing slashes and fragments
+    url = url.rstrip('/').split('#')[0].split('?')[0]
+    
+    # Extract the core page identifier (usually the page ID)
+    # For Jira/Confluence URLs, extract the page ID
+    if '/pages/' in url:
+        parts = url.split('/pages/')
+        if len(parts) > 1:
+            page_part = parts[1].split('/')[0]  # Get just the page ID
+            return f"{parts[0]}/pages/{page_part}"
+    
+    return url
+
 def extract_key_phrase(text):
     """Extract a key phrase from the content for deep linking"""
     if not text:
@@ -52,12 +89,13 @@ def query_knowledge_base(question):
         
         answer = response['output']['text']
         sources = []
+        unique_sources = {}  # Track unique documents by URI
         
         # Extract citations with proper footnote formatting
         if 'citations' in response:
-            source_counter = 1
             for citation in response['citations']:
                 for reference in citation.get('retrievedReferences', []):
+                    print(f"Full reference: {json.dumps(reference, indent=2)}")  # Debug
                     location = reference.get('location', {})
                     uri = None
                     title = None
@@ -65,24 +103,57 @@ def query_knowledge_base(question):
                     # Handle different location types
                     if 'webLocation' in location:
                         uri = location['webLocation']['url']
-                        title = uri.split('/')[-1] if uri else 'Web Document'
+                        # Extract title from URL - replace + with spaces and decode
+                        url_title = uri.split('/')[-1].replace('+', ' ') if uri else 'Web Document'
+                        title = reference.get('metadata', {}).get('title') or url_title
                     elif 's3Location' in location:
                         uri = location['s3Location']['uri']
-                        title = uri.split('/')[-1] if uri else 'Document'
+                        # Extract title from URI path
+                        url_title = uri.split('/')[-1] if uri else 'Document'
+                        title = reference.get('metadata', {}).get('title') or url_title
                     
                     if uri:
                         # Extract a snippet of the relevant text for deep linking
                         content_text = reference.get('content', {}).get('text', '')
-                        # Get first meaningful sentence or heading
                         snippet = extract_key_phrase(content_text)
                         
-                        sources.append({
-                            'number': source_counter,
-                            'title': title,
-                            'uri': uri,
-                            'snippet': snippet
-                        })
-                        source_counter += 1
+                        # Normalize URI for deduplication
+                        normalized_uri = normalize_url(uri)
+                        
+                        # Deduplicate by normalized URI - keep the best title and snippet
+                        if normalized_uri not in unique_sources:
+                            unique_sources[normalized_uri] = {
+                                'title': title,
+                                'uri': uri,  # Keep original URI for linking
+                                'snippet': snippet,
+                                'content': content_text
+                            }
+                        else:
+                            existing = unique_sources[normalized_uri]
+                            # Update if we have a better title or more content
+                            if is_better_title(title, existing['title']) or len(content_text) > len(existing['content']):
+                                # Keep the better title, but prefer more content for snippet
+                                best_title = title if is_better_title(title, existing['title']) else existing['title']
+                                best_snippet = snippet if len(content_text) > len(existing['content']) else existing['snippet']
+                                best_uri = uri if len(content_text) > len(existing['content']) else existing['uri']
+                                
+                                unique_sources[normalized_uri] = {
+                                    'title': best_title,
+                                    'uri': best_uri,
+                                    'snippet': best_snippet,
+                                    'content': content_text if len(content_text) > len(existing['content']) else existing['content']
+                                }
+            
+            # Convert to final sources list with numbering
+            source_counter = 1
+            for source_data in unique_sources.values():
+                sources.append({
+                    'number': source_counter,
+                    'title': source_data['title'],
+                    'uri': source_data['uri'],
+                    'snippet': source_data['snippet']
+                })
+                source_counter += 1
         
         return {
             'answer': answer,
