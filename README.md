@@ -13,6 +13,27 @@ This project includes a complete chatbot widget implementation:
 ### Backend File
 - **chatbot_backend.py** - Flask server that connects to Amazon Bedrock Knowledge Base
 
+## Setup
+
+**Before running the application, you need to:**
+
+1. **Configure AWS credentials:**
+   ```bash
+   aws configure
+   ```
+   Enter your AWS Access Key ID, Secret Access Key, and region.
+
+2. **Update configuration in the code:**
+   - Replace `knowledgeBaseId` with your Bedrock Knowledge Base ID
+   - Update `region_name` to match your AWS region
+   - Modify `modelArn` if using a different Bedrock model
+
+3. **Ensure AWS permissions:**
+   Your AWS user/role needs permissions for:
+   - `bedrock:InvokeModel`
+   - `bedrock-agent-runtime:Retrieve`
+   - `bedrock-agent-runtime:RetrieveAndGenerate`
+
 ## Quick Start
 
 1. **Start the backend server:**
