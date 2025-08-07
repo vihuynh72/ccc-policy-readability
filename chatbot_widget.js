@@ -2,12 +2,45 @@ let isOpen = false;
 let currentAttachment = null;
 let currentSources = [];
 let messageId = 0;
+let conversationHistory = []; // Store conversation context for current session
+let allConversationSources = []; // Accumulate all sources from the conversation without duplicates
 
 // Initialize drag and drop and scroll handling
 document.addEventListener('DOMContentLoaded', function() {
     initializeDragAndDrop();
     initializeScrollHandling();
+    initializeKeyboardShortcuts();
 });
+
+function initializeKeyboardShortcuts() {
+    document.addEventListener('keydown', function(event) {
+        // Only handle shortcuts when chat is open
+        if (!isOpen) return;
+        
+        // F key to toggle fullscreen
+        if (event.key === 'f' || event.key === 'F') {
+            // Don't trigger if user is typing in an input field
+            if (event.target.tagName.toLowerCase() === 'input' || 
+                event.target.tagName.toLowerCase() === 'textarea') {
+                return;
+            }
+            event.preventDefault();
+            toggleFullscreen();
+        }
+        
+        // ESC key to exit fullscreen (or close chat if not in fullscreen)
+        if (event.key === 'Escape') {
+            const popup = document.getElementById('chatPopup');
+            if (popup.classList.contains('fullscreen')) {
+                event.preventDefault();
+                // Exit fullscreen
+                popup.classList.remove('fullscreen');
+                updateFullscreenButton();
+                announceToScreenReader('Exited fullscreen mode');
+            }
+        }
+    });
+}
 
 function toggleChat() {
     const popup = document.getElementById('chatPopup');
@@ -261,6 +294,16 @@ function clearAttachment() {
     document.getElementById('attachmentInput').value = '';
 }
 
+function clearConversationHistory() {
+    conversationHistory = [];
+    allConversationSources = [];
+    currentSources = [];
+    console.log('Conversation history and sources cleared');
+    
+    // Clear the sources panel
+    updateSourcesPanel([]);
+}
+
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     const message = input.value.trim();
@@ -306,19 +349,23 @@ async function sendMessage() {
             const formData = new FormData();
             formData.append('message', message);
             formData.append('file', currentAttachment);
+            formData.append('conversation_history', JSON.stringify(conversationHistory));
             
             response = await fetch('/chat', {
                 method: 'POST',
                 body: formData
             });
         } else {
-            // Send regular message
+            // Send regular message with conversation history
             response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message })
+                body: JSON.stringify({ 
+                    message: message,
+                    conversation_history: conversationHistory
+                })
             });
         }
         
@@ -336,6 +383,25 @@ async function sendMessage() {
             console.log('About to call addMessage with:', data.response);
             addMessage(data.response, 'bot', data.sources || [], msgId + 1);
             console.log('addMessage completed successfully');
+            
+            // Store this exchange in conversation history
+            conversationHistory.push({
+                role: 'user',
+                content: message,
+                has_attachment: !!currentAttachment,
+                attachment_name: currentAttachment ? currentAttachment.name : null
+            });
+            conversationHistory.push({
+                role: 'assistant', 
+                content: data.response
+            });
+            
+            // Keep only last 10 exchanges (20 messages) to prevent context from getting too long
+            if (conversationHistory.length > 20) {
+                conversationHistory = conversationHistory.slice(-20);
+            }
+            
+            console.log('Conversation history updated:', conversationHistory);
             
             // Update sources panel
             console.log('About to update sources panel');
@@ -427,25 +493,42 @@ function retryMessage(message, attachment, errorElement) {
     sendMessage();
 }
 
-function updateSourcesPanel(sources) {
-    currentSources = sources;
+function updateSourcesPanel(newSources) {
+    // Add new sources to the accumulated list, avoiding duplicates
+    if (newSources && newSources.length > 0) {
+        newSources.forEach(newSource => {
+            // Check if this source already exists (by URI)
+            const existingSource = allConversationSources.find(source => source.uri === newSource.uri);
+            if (!existingSource) {
+                // Assign a new number based on total count
+                const sourceWithNumber = {
+                    ...newSource,
+                    number: allConversationSources.length + 1
+                };
+                allConversationSources.push(sourceWithNumber);
+            }
+        });
+    }
+    
+    // Update current sources to be all accumulated sources
+    currentSources = allConversationSources;
     const sourcesList = document.getElementById('sourcesList');
     const notificationDot = document.getElementById('sourcesNotificationDot');
     const sourcesPanel = document.getElementById('sourcesPanel');
     
-    if (!sources || sources.length === 0) {
-        sourcesList.innerHTML = '<p class="no-sources">No sources for this response.</p>';
+    if (!allConversationSources || allConversationSources.length === 0) {
+        sourcesList.innerHTML = '<p class="no-sources">No sources for this conversation.</p>';
         hideSourcesNotification();
         return;
     }
     
     // Show notification dot if sources panel is closed and there are new sources
-    if (!sourcesPanel.classList.contains('open') && sources.length > 0) {
+    if (!sourcesPanel.classList.contains('open') && newSources && newSources.length > 0) {
         showSourcesNotification();
     }
     
     let sourcesHTML = '';
-    sources.forEach((source, index) => {
+    allConversationSources.forEach((source, index) => {
         let linkUrl = source.uri;
         if (source.snippet && source.snippet.length > 5) {
             linkUrl = `${source.uri}#:~:text=${encodeURIComponent(source.snippet)}`;
@@ -453,7 +536,7 @@ function updateSourcesPanel(sources) {
         
         sourcesHTML += `
             <div class="source-item" data-source-index="${index}" data-source-url="${linkUrl}" role="button" tabindex="0" aria-label="Source: ${source.title}" onclick="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" oncontextmenu="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" style="position: relative;">
-                <div class="source-title">${source.title}</div>
+                <div class="source-title">[${source.number}] ${source.title}</div>
                 <div class="source-snippet">${source.snippet || ''}</div>
             </div>
         `;

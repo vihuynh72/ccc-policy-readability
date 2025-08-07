@@ -253,6 +253,86 @@ def query_knowledge_base(question):
             'sources': []
         }
 
+def query_knowledge_base_with_history(question, conversation_history=[]):
+    """Query knowledge base with conversation context"""
+    client = boto3.client("bedrock-agent-runtime", region_name="us-west-2")
+    
+    try:
+        # Build context from conversation history
+        enhanced_question = question
+        if conversation_history:
+            context_summary = "Previous conversation context:\n"
+            for msg in conversation_history[-4:]:  # Last 4 messages for context
+                role = "User" if msg.get('role') == 'user' else "Assistant"
+                content = msg.get('content', '')[:300]  # Limit length
+                context_summary += f"{role}: {content}\n"
+            enhanced_question = f"{context_summary}\nCurrent question: {question}"
+        
+        response = client.retrieve_and_generate(
+            input={
+                'text': enhanced_question
+            },
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': 'GWVQU3YPXK',
+                    'modelArn': 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                }
+            }
+        )
+        
+        answer = response['output']['text']
+        sources = []
+        unique_sources = {}
+        
+        # Extract citations (same logic as original function)
+        if 'citations' in response:
+            for citation in response['citations']:
+                for reference in citation.get('retrievedReferences', []):
+                    location = reference.get('location', {})
+                    uri = None
+                    title = None
+                    
+                    if 'webLocation' in location:
+                        uri = location['webLocation']['url']
+                        url_title = uri.split('/')[-1].replace('+', ' ') if uri else 'Web Document'
+                        title = url_title[:100] + '...' if len(url_title) > 100 else url_title
+                    elif 's3Location' in location:
+                        s3_uri = location['s3Location']['uri']
+                        title = s3_uri.split('/')[-1] if '/' in s3_uri else s3_uri
+                        uri = s3_uri
+                    
+                    if uri and uri not in unique_sources:
+                        content = reference.get('content', {})
+                        snippet = content.get('text', '')[:200] if content else ''
+                        
+                        unique_sources[uri] = {
+                            'title': title or 'Document',
+                            'uri': uri,
+                            'snippet': snippet
+                        }
+        
+        source_counter = 1
+        for source_data in unique_sources.values():
+            sources.append({
+                'number': source_counter,
+                'title': source_data['title'],
+                'uri': source_data['uri'],
+                'snippet': source_data['snippet']
+            })
+            source_counter += 1
+        
+        return {
+            'answer': answer,
+            'sources': sources
+        }
+        
+    except Exception as e:
+        return {
+            'answer': f"I'm having trouble accessing the knowledge base right now. Error: {str(e)}",
+            'sources': []
+        }
+
 @app.route('/')
 def index():
     return send_from_directory('.', 'chatbot_widget.html')
@@ -380,8 +460,15 @@ def chat():
         # Message with file attachment
         message = request.form.get('message', '')
         file = request.files.get('file')
+        conversation_history_str = request.form.get('conversation_history', '[]')
+        
+        try:
+            conversation_history = json.loads(conversation_history_str)
+        except:
+            conversation_history = []
         
         print(f"Received message with attachment: {message}")
+        print(f"Conversation history: {len(conversation_history)} messages")
         
         # If there's a file, process it and include in the response
         if file and file.filename and allowed_file(file.filename):
@@ -395,10 +482,10 @@ def chat():
                 # Simple and fast approach: analyze file directly with Claude
                 if is_image_file(filename):
                     # For images, use Claude Vision directly with the question
-                    response_text = analyze_image_simple(file_data, filename, message)
+                    response_text = analyze_image_simple(file_data, filename, message, conversation_history)
                 else:
                     # For PDFs, convert and analyze with Claude
-                    response_text = analyze_pdf_simple(file_data, filename, message)
+                    response_text = analyze_pdf_simple(file_data, filename, message, conversation_history)
                 
                 return jsonify({
                     'response': response_text,
@@ -431,13 +518,15 @@ def chat():
         # Regular JSON message (backward compatibility)
         data = request.json
         question = data.get('message', '')
+        conversation_history = data.get('conversation_history', [])
         
         if not question:
             return jsonify({'error': 'No message provided'}), 400
         
         print(f"Received question: {question}")
+        print(f"Conversation history: {len(conversation_history)} messages")
         
-        result = query_knowledge_base(question)
+        result = query_knowledge_base_with_history(question, conversation_history)
         response_text = result['answer']
         
         if result['sources']:
@@ -525,7 +614,7 @@ def analyze_pdf_with_question(pdf_data, filename, user_question):
     except Exception as e:
         return f"Error processing PDF '{filename}': {str(e)}"
 
-def analyze_image_simple(image_data, filename, user_question):
+def analyze_image_simple(image_data, filename, user_question, conversation_history=[]):
     """Simple and fast image analysis using Claude Vision"""
     
     if TEST_MODE:
@@ -540,13 +629,37 @@ def analyze_image_simple(image_data, filename, user_question):
         
         client = boto3.client("bedrock-runtime", region_name="us-west-2")
         
+        # Build conversation context if available
+        context_text = ""
+        if conversation_history:
+            context_text = "\n\nPrevious conversation context:\n"
+            for msg in conversation_history[-4:]:  # Include last 4 messages for context
+                role = "User" if msg.get('role') == 'user' else "Assistant"
+                content = msg.get('content', '')[:200]  # Limit length
+                context_text += f"{role}: {content}\n"
+            context_text += "\nBased on this context, analyze the image to answer the current question.\n"
+        
         # Create a focused prompt that combines file analysis with the question
         if user_question.strip():
-            prompt = f"I have a question: {user_question}\n\nPlease look at this image and answer my question based on what you can see. If the answer isn't in the image, please say so and describe what you do see instead."
+            prompt = f"I have a question: {user_question}{context_text}\n\nPlease look at this image and answer my question based on what you can see. If the answer isn't in the image, please say so and describe what you do see instead. If this question relates to our previous conversation, acknowledge that context."
         else:
-            prompt = "Please describe what you see in this image in detail."
+            prompt = f"Please describe what you see in this image in detail.{context_text}"
         
-        message = {
+        # Build messages array with conversation history for Claude
+        messages = []
+        
+        # Add previous conversation if available (last few exchanges)
+        if conversation_history:
+            for msg in conversation_history[-4:]:  # Last 4 messages
+                role = "user" if msg.get('role') == 'user' else "assistant"
+                # For previous messages, only include text content
+                messages.append({
+                    "role": role,
+                    "content": msg.get('content', '')[:300]  # Limit content length
+                })
+        
+        # Add current message with image
+        messages.append({
             "role": "user",
             "content": [
                 {
@@ -562,12 +675,12 @@ def analyze_image_simple(image_data, filename, user_question):
                     "text": prompt
                 }
             ]
-        }
+        })
         
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1000,
-            "messages": [message]
+            "messages": messages
         })
         
         response = client.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
@@ -582,7 +695,7 @@ def analyze_image_simple(image_data, filename, user_question):
         print(f"Error analyzing image: {str(e)}")
         return f"Sorry, I couldn't analyze this image. Error: {str(e)}"
 
-def analyze_pdf_simple(pdf_data, filename, user_question):
+def analyze_pdf_simple(pdf_data, filename, user_question, conversation_history=[]):
     """Simple PDF analysis - convert multiple pages to images and analyze comprehensively"""
     
     if TEST_MODE:
@@ -619,10 +732,20 @@ def analyze_pdf_simple(pdf_data, filename, user_question):
         pdf_document.close()
 
         # Create comprehensive message for Claude Vision to analyze all pages together
+        # Build conversation context if available
+        context_text = ""
+        if conversation_history:
+            context_text = "\n\nPrevious conversation context:\n"
+            for msg in conversation_history[-6:]:  # Include last 6 messages for context
+                role = "User" if msg.get('role') == 'user' else "Assistant"
+                content = msg.get('content', '')[:200]  # Limit length
+                context_text += f"{role}: {content}\n"
+            context_text += "\nBased on this context and the current question, analyze the document.\n"
+        
         content = [
             {
                 "type": "text",
-                "text": f"""You are analyzing a document to answer this specific question: "{user_question}"
+                "text": f"""You are analyzing a document to answer this specific question: "{user_question}"{context_text}
 
 Please review all the pages of this document and provide a direct, concise answer to the user's question. 
 
@@ -632,17 +755,31 @@ IMPORTANT INSTRUCTIONS:
 - Do not provide page-by-page analysis
 - If you find the answer, state it clearly and cite the specific information from the document
 - If the information is not in the document, say so directly
-- Keep your response clear and organized"""
+- Keep your response clear and organized
+- If this question relates to previous conversation, acknowledge that context"""
             }
         ]
         
         # Add all page images
         content.extend(all_page_images)
         
-        message = {
+        # Build messages array with conversation history for Claude
+        messages = []
+        
+        # Add previous conversation if available (last few exchanges)
+        if conversation_history:
+            for msg in conversation_history[-6:]:  # Last 6 messages
+                role = "user" if msg.get('role') == 'user' else "assistant"
+                messages.append({
+                    "role": role,
+                    "content": msg.get('content', '')[:500]  # Limit content length
+                })
+        
+        # Add current message
+        messages.append({
             "role": "user",
             "content": content
-        }
+        })
         
         # Call Claude Vision
         client = boto3.client("bedrock-runtime", region_name="us-west-2")
@@ -650,7 +787,7 @@ IMPORTANT INSTRUCTIONS:
         body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1000,
-            "messages": [message]
+            "messages": messages
         }
         
         response = client.invoke_model(
