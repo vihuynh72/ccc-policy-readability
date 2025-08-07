@@ -1,6 +1,39 @@
 # ccc-policy-readability
 A smart assistant for CCCApply built with Amazon Bedrock
 
+## Quick Setup & Launch
+
+### 1. Create virtual environment
+```bash
+python -m venv venv # or use Python: Select Intepreter
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### 2. Install dependencies
+```bash
+pip install -r requirements_chatbot.txt
+```
+
+### 3. Set AWS credentials
+```bash
+export AWS_ACCESS_KEY_ID="your_access_key"
+export AWS_SECRET_ACCESS_KEY="your_secret_key" 
+export AWS_SESSION_TOKEN="your_session_token"
+```
+
+### 4. Start the server
+```bash
+python chatbot_backend.py
+```
+
+### 5. Open in browser
+Go to: `http://localhost:5000`
+
+### 6. Test the chatbot
+Click the blue chat button in the bottom-right corner.
+
+---
+
 ## Files Overview
 
 This project includes a complete chatbot widget implementation:

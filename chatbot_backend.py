@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 import boto3
 import json
+import os
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.', static_folder='.')
 CORS(app)
 
 def is_better_title(new_title, existing_title):
@@ -165,6 +166,14 @@ def query_knowledge_base(question):
             'answer': f"I'm having trouble accessing the knowledge base right now. Error: {str(e)}",
             'sources': []
         }
+
+@app.route('/')
+def index():
+    return send_from_directory('.', 'chatbot_widget.html')
+
+@app.route('/<path:filename>')
+def static_files(filename):
+    return send_from_directory('.', filename)
 
 @app.route('/test', methods=['GET'])
 def test():
