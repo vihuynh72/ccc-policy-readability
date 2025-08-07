@@ -20,52 +20,95 @@
     </div>
 
     <div class="chat-widget">
-        <button class="chat-button" onclick="toggleChat()">
-            <svg viewBox="0 0 24 24">
+        <button class="chat-button" onclick="toggleChat()" aria-label="Open chat assistant" aria-expanded="false" id="chatToggle">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
             </svg>
         </button>
         
-        <div class="chat-popup" id="chatPopup">
-            <div class="chat-header">
-                <h3>Wiki Assistant</h3>
-                <button class="close-btn" onclick="toggleChat()">&times;</button>
-            </div>
-            
-            <div class="chat-messages" id="chatMessages">
-                <div class="message bot-message">
-                    Hi! I'm here to help you find documents and information. What can I help you with?
+        <div class="chat-popup" id="chatPopup" role="dialog" aria-labelledby="chat-header-title" aria-hidden="true">
+            <div class="sources-panel" id="sourcesPanel" role="complementary" aria-label="Source citations">
+                <div class="sources-header">
+                    <h4>Sources</h4>
+                    <button class="close-sources" onclick="toggleSourcesPanel()" aria-label="Close sources panel">×</button>
+                </div>
+                <div class="sources-list" id="sourcesList" role="list" aria-label="Citation sources">
+                    <p class="no-sources">No sources yet. Ask a question to see citations!</p>
                 </div>
             </div>
             
-            <div class="typing-indicator" id="typingIndicator">
-                <div class="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </div>
-            
-            <div class="chat-input">
-                <div class="attachment-section">
-                    <input type="file" id="attachmentInput" accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff" style="display: none;" onchange="handleAttachment(event)">
-                    <button class="attachment-btn" onclick="document.getElementById('attachmentInput').click()" title="Attach file">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
-                        </svg>
-                    </button>
-                    <div id="attachmentPreview" class="attachment-preview" style="display: none;">
-                        <span id="attachmentName"></span>
-                        <button onclick="clearAttachment()" class="clear-attachment">×</button>
+            <div class="chat-main">
+                <div class="chat-header">
+                    <h3 id="chat-header-title">Wiki Assistant</h3>
+                    <div class="header-actions">
+                        <button class="sources-btn" id="sourcesBtn" onclick="toggleSourcesPanel()" title="View sources" aria-label="Toggle sources panel" aria-pressed="false">
+                            <span class="sources-icon">❜ ❜</span>
+                            <span class="notification-dot" id="sourcesNotificationDot"></span>
+                        </button>
+                        <button class="fullscreen-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle fullscreen" aria-label="Toggle fullscreen">
+                            ⛶
+                        </button>
+                        <button class="close-btn" onclick="toggleChat()" aria-label="Close chat">&times;</button>
                     </div>
                 </div>
-                <div class="input-row">
-                    <input type="text" id="messageInput" placeholder="Ask me anything..." onkeypress="handleKeyPress(event)">
-                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages" role="log" aria-label="Chat messages" aria-live="polite">
+                        <div class="message bot-message">
+                            Hi! I'm here to help you find documents and information. What can I help you with?
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+                
+                <div class="chat-input">
+                    <div class="drag-overlay" id="dragOverlay" aria-hidden="true">
+                        <div class="drag-content">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+                            </svg>
+                            <p>Drop your file here</p>
+                            <small>PDF, PNG, JPG (max 16MB)</small>
+                        </div>
+                    </div>
+                    
+                    <div class="attachment-section">
+                        <input type="file" id="attachmentInput" accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff" style="display: none;" onchange="handleAttachment(event)" aria-label="Select file to upload">
+                        <div id="attachmentPreview" class="attachment-preview" style="display: none;" role="status" aria-live="polite">
+                            <div class="file-icon" aria-hidden="true">📎</div>
+                            <div class="file-info">
+                                <span id="attachmentName"></span>
+                                <div class="file-status" id="fileStatus">Ready to send</div>
+                            </div>
+                            <button onclick="clearAttachment()" class="clear-attachment" aria-label="Remove attachment">×</button>
+                        </div>
+                    </div>
+                    <div class="input-row">
+                        <div class="input-container">
+                            <input type="text" id="messageInput" placeholder="Ask me anything..." onkeypress="handleKeyPress(event)" aria-label="Type your message">
+                            <button class="attachment-btn" onclick="document.getElementById('attachmentInput').click()" title="Attach file" aria-label="Attach file">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()" aria-label="Send message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="scroll-to-top" id="scrollToTop" onclick="scrollToBottom()" title="Scroll to bottom" aria-label="Scroll to bottom of chat">
+                        ↓
+                    </div>
                 </div>
             </div>
         </div>
