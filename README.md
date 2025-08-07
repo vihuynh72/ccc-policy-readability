@@ -6,7 +6,7 @@ A smart assistant for CCCApply built with Amazon Bedrock
 ### 1. Create virtual environment
 ```bash
 python -m venv venv # or use Python: Select Intepreter
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source .venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 ### 2. Install dependencies

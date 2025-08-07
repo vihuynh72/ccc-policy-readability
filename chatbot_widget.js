@@ -268,6 +268,10 @@ async function sendMessage() {
     if (!message && !currentAttachment) return;
     
     const sendBtn = document.getElementById('sendBtn');
+    
+    // Prevent duplicate calls - check if already processing
+    if (sendBtn.disabled) return;
+    
     sendBtn.disabled = true;
     
     // Create unique message ID
@@ -326,18 +330,34 @@ async function sendMessage() {
         console.log('Received data:', data);
         
         showTyping(false);
-        addMessage(data.response, 'bot', data.sources || [], msgId + 1);
         
-        // Update sources panel
-        updateSourcesPanel(data.sources || []);
+        // Add detailed logging to catch any errors
+        try {
+            console.log('About to call addMessage with:', data.response);
+            addMessage(data.response, 'bot', data.sources || [], msgId + 1);
+            console.log('addMessage completed successfully');
+            
+            // Update sources panel
+            console.log('About to update sources panel');
+            updateSourcesPanel(data.sources || []);
+            console.log('Sources panel updated');
+            
+        } catch (messageError) {
+            console.error('Error in message processing:', messageError);
+            console.error('Error stack:', messageError.stack);
+            // Don't show the error to user, just log it
+            throw messageError; // Re-throw to trigger main error handler
+        }
         
         // Clear attachment after successful sending
         if (currentAttachment) {
             clearAttachment();
-            emitMetric('file_processed', { filename: currentAttachment.name });
+            // Temporarily disable this to see if it's causing issues
+            // emitMetric('file_processed', { filename: currentAttachment.name });
         }
         
-        emitMetric('message_sent', { hasAttachment: !!currentAttachment });
+        // Temporarily disable this to see if it's causing issues
+        // emitMetric('message_sent', { hasAttachment: !!currentAttachment });
         
     } catch (error) {
         console.error('Error sending message:', error);
