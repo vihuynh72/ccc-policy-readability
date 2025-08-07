@@ -706,7 +706,8 @@ p { line-height: 1.6; color: #666; }
     align-items: center;
 }
 
-.chat-input input {
+.chat-input input,
+.chat-input textarea {
     flex: 1;
     padding: 14px 55px 14px 20px;
     border: 2px solid #e1e8ed;
@@ -715,12 +716,26 @@ p { line-height: 1.6; color: #666; }
     font-size: 15px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     background: white;
+    font-family: inherit;
+    resize: none;
+    overflow: hidden;
+    height: auto; /* Let it size naturally based on content and padding */
+    min-height: auto; /* Remove min-height constraint */
+    max-height: 120px;
+    line-height: 1.4;
+    box-sizing: border-box;
 }
 
-.chat-input input:focus {
+.chat-input input:focus,
+.chat-input textarea:focus {
     border-color: #0057B8;
     box-shadow: 0 0 0 4px rgba(0,87,184,0.12);
     transform: translateY(-1px);
+}
+
+.chat-input textarea {
+    padding-top: 14px;
+    padding-bottom: 14px;
 }
 
 .send-btn {
@@ -835,7 +850,8 @@ p { line-height: 1.6; color: #666; }
     outline-offset: 2px;
 }
 
-.chat-input input:focus {
+.chat-input input:focus,
+.chat-input textarea:focus {
     border-color: #0057B8;
     box-shadow: 0 0 0 3px rgba(0,87,184,0.1);
 }

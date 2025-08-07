@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeDragAndDrop();
     initializeScrollHandling();
     initializeKeyboardShortcuts();
+    
+    // Initialize textarea height
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+        autoResizeTextarea(messageInput);
+    }
 });
 
 function initializeKeyboardShortcuts() {
@@ -52,7 +58,10 @@ function toggleChat() {
     toggle.setAttribute('aria-label', isOpen ? 'Close chat assistant' : 'Open chat assistant');
     
     if (isOpen) {
-        document.getElementById('messageInput').focus();
+        const messageInput = document.getElementById('messageInput');
+        messageInput.focus();
+        // Ensure textarea is properly sized on open
+        autoResizeTextarea(messageInput);
         updateScrollButton();
         announceToScreenReader('Chat opened');
     } else {
@@ -226,6 +235,48 @@ function handleKeyPress(event) {
     }
 }
 
+function handleKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+    // Allow Shift+Enter for new lines
+}
+
+function autoResizeTextarea(textarea) {
+    // First, let it size naturally to get the single-line height
+    textarea.style.height = 'auto';
+    
+    // Calculate what the single line height should be
+    // This is font-size * line-height + padding
+    const computedStyle = window.getComputedStyle(textarea);
+    const fontSize = parseFloat(computedStyle.fontSize); // 15px
+    const lineHeight = parseFloat(computedStyle.lineHeight) || fontSize * 1.4; // 1.4 is our line-height
+    const paddingTop = parseFloat(computedStyle.paddingTop); // 14px
+    const paddingBottom = parseFloat(computedStyle.paddingBottom); // 14px
+    const borderWidth = parseFloat(computedStyle.borderTopWidth) + parseFloat(computedStyle.borderBottomWidth); // 4px total
+    
+    const singleLineHeight = lineHeight + paddingTop + paddingBottom + borderWidth;
+    
+    // Get the actual content height
+    const scrollHeight = textarea.scrollHeight;
+    const maxHeight = 120; // Maximum allowed height
+    
+    // Use the larger of single line height or scroll height, but cap at max
+    const newHeight = Math.min(Math.max(singleLineHeight, scrollHeight), maxHeight);
+    
+    textarea.style.height = newHeight + 'px';
+    
+    // Update the border radius and padding based on whether it's multi-line
+    if (scrollHeight > singleLineHeight + 5) { // Add small buffer
+        // Multi-line: reduce border radius for better appearance
+        textarea.style.borderRadius = '16px';
+    } else {
+        // Single line: keep original rounded appearance
+        textarea.style.borderRadius = '28px';
+    }
+}
+
 function handleAttachment(event) {
     const file = event.target.files[0];
     if (file) {
@@ -328,6 +379,8 @@ async function sendMessage() {
     addMessage(displayMessage, 'user', [], msgId);
     
     input.value = '';
+    // Reset textarea height after clearing
+    autoResizeTextarea(input);
     
     // Show typing indicator
     showTyping(true);
@@ -474,6 +527,7 @@ function retryMessage(message, attachment, errorElement) {
     // Restore original state
     const input = document.getElementById('messageInput');
     input.value = message;
+    autoResizeTextarea(input); // Resize textarea to fit the restored message
     
     if (attachment) {
         currentAttachment = attachment;
