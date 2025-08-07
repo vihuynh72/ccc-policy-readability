@@ -32,6 +32,9 @@ Go to: `http://localhost:5000`
 ### 6. Test the chatbot
 Click the blue chat button in the bottom-right corner.
 
+### 7. Upload files (optional)
+Click the green upload button to upload images for AI analysis.
+
 ---
 
 ## Files Overview
@@ -81,10 +84,14 @@ This project includes a complete chatbot widget implementation:
 3. **Test the chatbot:**
    Click the blue chat button in the bottom-right corner
 
+4. **Upload images (optional):**
+   Click the green upload button to analyze images with AI
+
 ## Features
 
 - Floating chat widget with smooth animations
 - Real-time responses from Amazon Bedrock
+- File upload support for images (automatic AI analysis)
 - Source citations with clickable footnotes
 - Responsive design for various screen sizes
 - Easy integration into existing websites

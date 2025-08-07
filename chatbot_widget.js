@@ -1,4 +1,5 @@
 let isOpen = false;
+let currentAttachment = null;
 
 function toggleChat() {
     const popup = document.getElementById('chatPopup');
@@ -15,32 +16,103 @@ function handleKeyPress(event) {
     }
 }
 
+function handleAttachment(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const maxSize = 16 * 1024 * 1024; // 16MB
+    if (file.size > maxSize) {
+        alert('File is too large. Maximum size is 16MB.');
+        return;
+    }
+    
+    // Store the attachment
+    currentAttachment = file;
+    
+    // Show attachment preview
+    const preview = document.getElementById('attachmentPreview');
+    const nameSpan = document.getElementById('attachmentName');
+    nameSpan.textContent = file.name;
+    preview.style.display = 'flex';
+    
+    // Update placeholder text
+    const input = document.getElementById('messageInput');
+    input.placeholder = `Ask something about ${file.name}...`;
+}
+
+function clearAttachment() {
+    currentAttachment = null;
+    const preview = document.getElementById('attachmentPreview');
+    preview.style.display = 'none';
+    
+    // Reset placeholder
+    const input = document.getElementById('messageInput');
+    input.placeholder = 'Ask me anything...';
+    
+    // Clear file input
+    document.getElementById('attachmentInput').value = '';
+}
+
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     const message = input.value.trim();
-    if (!message) return;
-    addMessage(message, 'user');
+    
+    if (!message && !currentAttachment) return;
+    
+    const sendBtn = document.getElementById('sendBtn');
+    sendBtn.disabled = true;
+    
+    // Display user message
+    let displayMessage = message;
+    if (currentAttachment) {
+        displayMessage = `📎 ${currentAttachment.name}\n${message}`;
+    }
+    addMessage(displayMessage, 'user');
+    
     input.value = '';
     showTyping(true);
-    document.getElementById('sendBtn').disabled = true;
+    
     try {
-        const response = await fetch('/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ message: message })
-        });
+        let response;
+        
+        if (currentAttachment) {
+            // Send message with attachment
+            const formData = new FormData();
+            formData.append('message', message);
+            formData.append('file', currentAttachment);
+            
+            response = await fetch('/chat', {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            // Send regular message
+            response = await fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message })
+            });
+        }
+        
         const data = await response.json();
-        console.log('Received data:', data);  // Debug log
-        console.log('Sources:', data.sources);  // Debug log
+        console.log('Received data:', data);
+        
         showTyping(false);
         addMessage(data.response, 'bot', data.sources);
+        
+        // Clear attachment after sending
+        if (currentAttachment) {
+            clearAttachment();
+        }
+        
     } catch (error) {
         showTyping(false);
         addMessage('Sorry, I\'m having trouble connecting right now. Please try again later.', 'bot');
     }
-    document.getElementById('sendBtn').disabled = false;
+    
+    sendBtn.disabled = false;
 }
 
 function addMessage(text, sender, sources = []) {
