@@ -7,18 +7,6 @@
     <link rel="stylesheet" href="chatbot_widget.css">
 </head>
 <body>
-    <div class="demo-content">
-        <h1>Company Wiki Demo</h1>
-        <p>This is a sample company wiki page. The chatbot widget in the bottom right can help staff quickly find documents and information.</p>
-        <p>Try asking questions like:</p>
-        <ul>
-            <li>"What is our vacation policy?"</li>
-            <li>"How do I submit an expense report?"</li>
-            <li>"Find documents about remote work"</li>
-        </ul>
-        <p>The chatbot will provide quick answers and link to relevant documents for more details.</p>
-    </div>
-
     <div class="chat-widget">
         <button class="chat-button" onclick="toggleChat()" aria-label="Open chat assistant" aria-expanded="false" id="chatToggle">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -35,6 +23,7 @@
                 <div class="sources-list" id="sourcesList" role="list" aria-label="Citation sources">
                     <p class="no-sources">No sources yet. Ask a question to see citations!</p>
                 </div>
+                <div class="sources-footer"></div>
             </div>
             
             <div class="chat-main">

@@ -105,6 +105,7 @@ function updateFullscreenButton() {
 
 let sourcesToggleTimeout = null;
 let originalSourcesContent = null;
+let sourcesBorderTimeout = null; // delay adding unified border until panel is open
 
 function toggleSourcesPanel() {
     const panel = document.getElementById('sourcesPanel');
@@ -112,6 +113,8 @@ function toggleSourcesPanel() {
     const btn = document.getElementById('sourcesBtn');
     const sourcesList = document.getElementById('sourcesList');
     const sourcesHeader = panel.querySelector('.sources-header');
+    // Keep CSS variable in sync for unified border ::before width
+    const SOURCES_WIDTH = 320; // keep in sync with CSS default
     
     const isOpen = panel.classList.contains('open');
     
@@ -131,15 +134,54 @@ function toggleSourcesPanel() {
         sourcesList.innerHTML = '';
         sourcesHeader.innerHTML = '';
         
+        // Begin closing: square corners right away
+        popup.classList.add('sources-closing');
+
         // After a brief pause, close the empty panel
         sourcesToggleTimeout = setTimeout(() => {
             panel.classList.remove('open');
             popup.classList.remove('sources-open');
+            popup.style.setProperty('--sources-width', '0px');
+            if (sourcesBorderTimeout) {
+                clearTimeout(sourcesBorderTimeout);
+                sourcesBorderTimeout = null;
+            }
+            // Remove the temporary closing class after the panel fully collapses
+            const removeClosingAfter = () => {
+                popup.classList.remove('sources-closing');
+                panel.removeEventListener('transitionend', removeClosingAfter);
+            };
+            panel.addEventListener('transitionend', removeClosingAfter);
         }, 150);
     } else {
         // Opening: expand panel first
         panel.classList.add('open');
-        popup.classList.add('sources-open');
+        // Square corners immediately during opening
+        popup.classList.add('sources-opening');
+        // Set expected width for unified border (CSS fallback)
+        popup.style.setProperty('--sources-width', SOURCES_WIDTH + 'px');
+
+        // Delay adding the unified border until width transition finishes
+        const onTransitionEnd = (e) => {
+            if (e.propertyName === 'width') {
+                popup.classList.add('sources-open');
+                popup.classList.remove('sources-opening');
+                panel.removeEventListener('transitionend', onTransitionEnd);
+                if (sourcesBorderTimeout) {
+                    clearTimeout(sourcesBorderTimeout);
+                    sourcesBorderTimeout = null;
+                }
+            }
+        };
+        panel.addEventListener('transitionend', onTransitionEnd);
+
+        // Fallback in case transitionend doesn't fire (reduced motion, zoom, etc.)
+        sourcesBorderTimeout = setTimeout(() => {
+            popup.classList.add('sources-open');
+            popup.classList.remove('sources-opening');
+            panel.removeEventListener('transitionend', onTransitionEnd);
+            sourcesBorderTimeout = null;
+        }, 420);
         
         // Hide notification dot when opening panel
         hideSourcesNotification();
