@@ -108,7 +108,7 @@ def describe_image_with_claude(image_data, filename):
         # Call Claude Vision
         print("Calling Claude Vision API...")
         response = client.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1000,
@@ -431,7 +431,7 @@ def describe_image_with_claude_memory(image_data, filename):
         # Call Claude Vision
         print("Calling Claude Vision API...")
         response = client.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1000,
@@ -683,7 +683,7 @@ def analyze_image_simple(image_data, filename, user_question, conversation_histo
             "messages": messages
         })
         
-        response = client.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+        response = client.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20241022-v2:0")
         response_body = json.loads(response.get('body').read())
         
         if 'content' in response_body and len(response_body['content']) > 0:
@@ -791,7 +791,7 @@ IMPORTANT INSTRUCTIONS:
         }
         
         response = client.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
             body=json.dumps(body)
         )
         
@@ -858,7 +858,7 @@ Please be detailed and accurate as this description will be used to answer quest
         }
         
         response = client.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1500,
@@ -962,7 +962,7 @@ def analyze_image_with_question(image_data, filename, user_question):
         }
         
         response = client.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1000,
