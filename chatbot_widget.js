@@ -5,11 +5,17 @@ let messageId = 0;
 let conversationHistory = []; // Store conversation context for current session
 let allConversationSources = []; // Accumulate all sources from the conversation without duplicates
 
+// Language support variables
+let currentLanguage = 'en';
+let supportedLanguages = {};
+let isLanguageDropdownOpen = false;
+
 // Initialize drag and drop and scroll handling
 document.addEventListener('DOMContentLoaded', function() {
     initializeDragAndDrop();
     initializeScrollHandling();
     initializeKeyboardShortcuts();
+    initializeLanguageSupport();
     
     // Initialize textarea height
     const messageInput = document.getElementById('messageInput');
@@ -63,6 +69,161 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('[chatDebug] available. Try: chatDebug.runTest() or chatDebug.logState()');
     } catch (e) {}
 });
+
+// Language Support Functions
+async function initializeLanguageSupport() {
+    try {
+        // Load supported languages from backend
+        const response = await fetch('/languages');
+        const data = await response.json();
+        supportedLanguages = data.languages;
+        
+        // Set initial language from browser or saved preference (without showing message)
+        const savedLang = localStorage.getItem('chatbot_language') || getBrowserLanguage();
+        if (savedLang && supportedLanguages[savedLang]) {
+            setLanguageQuiet(savedLang);
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('languageDropdown');
+            const button = document.getElementById('languageBtn');
+            
+            if (dropdown && button && !button.contains(event.target) && !dropdown.contains(event.target)) {
+                closeLanguageDropdown();
+            }
+        });
+        
+        console.log('Language support initialized:', supportedLanguages);
+    } catch (error) {
+        console.error('Failed to initialize language support:', error);
+    }
+}
+
+function getBrowserLanguage() {
+    const lang = navigator.language || navigator.userLanguage;
+    if (!lang) return 'en';
+    
+    // Extract main language code (e.g., 'en' from 'en-US')
+    const mainLang = lang.split('-')[0].toLowerCase();
+    return mainLang;
+}
+
+function toggleLanguageDropdown() {
+    const dropdown = document.getElementById('languageDropdown');
+    if (!dropdown) return;
+    
+    if (isLanguageDropdownOpen) {
+        closeLanguageDropdown();
+    } else {
+        openLanguageDropdown();
+    }
+}
+
+function openLanguageDropdown() {
+    const dropdown = document.getElementById('languageDropdown');
+    if (!dropdown) return;
+    
+    dropdown.classList.add('show');
+    isLanguageDropdownOpen = true;
+    
+    // Update active state
+    updateLanguageDropdownSelection();
+}
+
+function closeLanguageDropdown() {
+    const dropdown = document.getElementById('languageDropdown');
+    if (!dropdown) return;
+    
+    dropdown.classList.remove('show');
+    isLanguageDropdownOpen = false;
+}
+
+function updateLanguageDropdownSelection() {
+    const options = document.querySelectorAll('.language-option');
+    options.forEach(option => {
+        const lang = option.getAttribute('data-lang');
+        if (lang === currentLanguage) {
+            option.classList.add('active');
+        } else {
+            option.classList.remove('active');
+        }
+    });
+}
+
+function selectLanguage(languageCode) {
+    if (!languageCode || !supportedLanguages[languageCode]) {
+        console.warn('Invalid language code:', languageCode);
+        return;
+    }
+    
+    currentLanguage = languageCode;
+    
+    // Update UI
+    updateLanguageDisplay();
+    updateLanguageDropdownSelection();
+    
+    // Save preference
+    localStorage.setItem('chatbot_language', languageCode);
+    
+    // Close dropdown
+    closeLanguageDropdown();
+    
+    // Add a language change message to the chat
+    addLanguageChangeMessage(languageCode);
+    
+    console.log('Language changed to:', languageCode, supportedLanguages[languageCode]);
+}
+
+function setLanguageQuiet(languageCode) {
+    if (!languageCode || !supportedLanguages[languageCode]) {
+        console.warn('Invalid language code:', languageCode);
+        return;
+    }
+    
+    currentLanguage = languageCode;
+    
+    // Update UI
+    updateLanguageDisplay();
+    updateLanguageDropdownSelection();
+    
+    // Save preference
+    localStorage.setItem('chatbot_language', languageCode);
+    
+    // Close dropdown
+    closeLanguageDropdown();
+    
+    // Don't add a language change message - this is for quiet initialization
+    console.log('Language set to:', languageCode, supportedLanguages[languageCode]);
+}
+
+function updateLanguageDisplay() {
+    const currentLangElement = document.getElementById('currentLanguage');
+    if (currentLangElement) {
+        currentLangElement.textContent = currentLanguage.toUpperCase();
+    }
+}
+
+function addLanguageChangeMessage(languageCode) {
+    const languageName = supportedLanguages[languageCode] || languageCode;
+    const message = `Language changed to ${languageName}. I'll respond in ${languageName} from now on.`;
+    
+    // Add a small system message
+    const chatMessages = document.getElementById('chatMessages');
+    if (chatMessages) {
+        const systemMessage = document.createElement('div');
+        systemMessage.className = 'message system-message';
+        systemMessage.style.fontSize = '12px';
+        systemMessage.style.color = '#666';
+        systemMessage.style.fontStyle = 'italic';
+        systemMessage.style.textAlign = 'center';
+        systemMessage.style.margin = '8px 0';
+        systemMessage.textContent = message;
+        
+        chatMessages.appendChild(systemMessage);
+        scrollToBottom();
+    }
+}
 
 // --- Helpers to robustly consume backend JSON and sources ---
 function safeParseJson(text) {
@@ -563,6 +724,8 @@ async function sendMessage() {
             formData.append('message', message);
             formData.append('file', currentAttachment);
             formData.append('conversation_history', JSON.stringify(conversationHistory));
+            formData.append('user_language', currentLanguage);
+            formData.append('output_language', currentLanguage);
             
             response = await fetch('/chat', {
                 method: 'POST',
@@ -577,7 +740,9 @@ async function sendMessage() {
                 },
                 body: JSON.stringify({ 
                     message: message,
-                    conversation_history: conversationHistory
+                    conversation_history: conversationHistory,
+                    user_language: currentLanguage,
+                    output_language: currentLanguage
                 })
             });
         }

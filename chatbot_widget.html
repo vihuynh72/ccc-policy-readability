@@ -30,8 +30,30 @@
                 <div class="chat-header">
                     <h3 id="chat-header-title">CCCApply Assistant</h3>
                     <div class="header-actions">
+                        <div class="language-selector">
+                            <button class="language-btn" id="languageBtn" onclick="toggleLanguageDropdown()" title="Select language" aria-label="Select language">
+                                🌐 <span id="currentLanguage">EN</span>
+                            </button>
+                            <div class="language-dropdown" id="languageDropdown" role="menu" aria-label="Language selection">
+                                <div class="language-option" data-lang="en" onclick="selectLanguage('en')" role="menuitem">🇺🇸 English</div>
+                                <div class="language-option" data-lang="es" onclick="selectLanguage('es')" role="menuitem">🇪🇸 Español</div>
+                                <div class="language-option" data-lang="fr" onclick="selectLanguage('fr')" role="menuitem">🇫🇷 Français</div>
+                                <div class="language-option" data-lang="de" onclick="selectLanguage('de')" role="menuitem">🇩🇪 Deutsch</div>
+                                <div class="language-option" data-lang="zh" onclick="selectLanguage('zh')" role="menuitem">🇨🇳 中文</div>
+                                <div class="language-option" data-lang="ja" onclick="selectLanguage('ja')" role="menuitem">🇯🇵 日本語</div>
+                                <div class="language-option" data-lang="ko" onclick="selectLanguage('ko')" role="menuitem">🇰🇷 한국어</div>
+                                <div class="language-option" data-lang="pt" onclick="selectLanguage('pt')" role="menuitem">🇵🇹 Português</div>
+                                <div class="language-option" data-lang="it" onclick="selectLanguage('it')" role="menuitem">🇮🇹 Italiano</div>
+                                <div class="language-option" data-lang="ru" onclick="selectLanguage('ru')" role="menuitem">🇷🇺 Русский</div>
+                                <div class="language-option" data-lang="ar" onclick="selectLanguage('ar')" role="menuitem">🇸🇦 العربية</div>
+                                <div class="language-option" data-lang="hi" onclick="selectLanguage('hi')" role="menuitem">🇮🇳 हिन्दी</div>
+                                <div class="language-option" data-lang="th" onclick="selectLanguage('th')" role="menuitem">🇹🇭 ไทย</div>
+                                <div class="language-option" data-lang="vi" onclick="selectLanguage('vi')" role="menuitem">🇻🇳 Tiếng Việt</div>
+                                <div class="language-option" data-lang="nl" onclick="selectLanguage('nl')" role="menuitem">🇳🇱 Nederlands</div>
+                            </div>
+                        </div>
                         <button class="sources-btn" id="sourcesBtn" onclick="toggleSourcesPanel()" title="View sources" aria-label="Toggle sources panel" aria-pressed="false">
-                            <span class="sources-icon">❜ ❜</span>
+                            <span class="sources-icon">❜❜</span>
                             <span class="notification-dot" id="sourcesNotificationDot"></span>
                         </button>
                         <button class="fullscreen-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle fullscreen" aria-label="Toggle fullscreen">

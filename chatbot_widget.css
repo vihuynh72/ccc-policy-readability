@@ -259,7 +259,9 @@ p { line-height: 1.6; color: #666; }
 .sources-icon {
     font-size: 16px;
     font-weight: bold;
-    letter-spacing: -2px;
+    letter-spacing: 2px;
+    white-space: nowrap;
+    display: inline-block;
 }
 
 .notification-dot {
@@ -300,6 +302,145 @@ p { line-height: 1.6; color: #666; }
 .sources-btn:hover {
     background: rgba(255,255,255,0.25);
     transform: scale(1.05);
+}
+
+/* Language Selector Styles */
+.language-selector {
+    position: relative;
+    display: inline-block;
+}
+
+.language-btn {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.language-btn:hover {
+    background: rgba(255,255,255,0.25);
+    transform: scale(1.05);
+}
+
+.language-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    min-width: 180px;
+    z-index: 1001;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid rgba(0,0,0,0.1);
+    /* Custom scrollbar for webkit browsers */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.2) transparent;
+}
+
+.language-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+
+.language-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.language-dropdown::-webkit-scrollbar-thumb {
+    background-color: rgba(0,0,0,0.2);
+    border-radius: 3px;
+}
+
+.language-dropdown::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0,0,0,0.3);
+}
+
+.language-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.language-option {
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #333;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.language-option:last-child {
+    border-bottom: none;
+}
+
+.language-option:hover {
+    background: #f8f9fa;
+    color: #0057B8;
+}
+
+.language-option[data-lang].active {
+    background: #e3f2fd;
+    color: #0057B8;
+    font-weight: 600;
+}
+
+.language-option:first-child {
+    border-radius: 12px 12px 0 0;
+}
+
+.language-option:last-child {
+    border-radius: 0 0 12px 12px;
+}
+
+/* System message styles */
+.system-message {
+    font-size: 12px !important;
+    color: #666 !important;
+    font-style: italic !important;
+    text-align: center !important;
+    margin: 8px 0 !important;
+    padding: 8px 12px !important;
+    background: rgba(0,0,0,0.05);
+    border-radius: 12px;
+    border: none;
+}
+
+/* Language dropdown scrollbar styling */
+.language-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+
+.language-dropdown::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 6px;
+}
+
+.language-dropdown::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 6px;
+}
+
+.language-dropdown::-webkit-scrollbar-thumb:hover {
+    background: #999;
 }
 
 .fullscreen-btn {
@@ -559,11 +700,25 @@ p { line-height: 1.6; color: #666; }
 }
 
 .bot-message {
-    background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-    color: #1f2937;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    color: #333;
     align-self: flex-start;
-    border: 1px solid #e1e8ed;
-    border-bottom-left-radius: 6px;
+    position: relative;
+}
+
+.system-message {
+    background: rgba(0,87,184,0.1);
+    border: 1px solid rgba(0,87,184,0.2);
+    color: #0057B8;
+    font-size: 12px !important;
+    font-style: italic;
+    text-align: center;
+    margin: 8px auto;
+    padding: 8px 16px;
+    border-radius: 20px;
+    max-width: 300px;
+    align-self: center;
 }
 
 .message.pending {
