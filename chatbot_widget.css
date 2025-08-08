@@ -959,6 +959,45 @@ p { line-height: 1.6; color: #666; }
     }
 }
 
+/* Footnote link styles */
+.footnote-link {
+    color: #0066cc;
+    text-decoration: none;
+    background-color: #e3f2fd;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.footnote-link:hover {
+    background-color: #1976d2;
+    color: white;
+    text-decoration: none;
+}
+
+.footnote-link:active {
+    transform: scale(0.95);
+}
+
+/* Source URL styling */
+.source-url {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 4px;
+    word-break: break-all;
+}
+
+.source-url a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.source-url a:hover {
+    text-decoration: underline;
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
     * {

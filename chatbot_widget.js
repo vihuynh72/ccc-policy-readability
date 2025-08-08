@@ -16,7 +16,125 @@ document.addEventListener('DOMContentLoaded', function() {
     if (messageInput) {
         autoResizeTextarea(messageInput);
     }
+
+    // Expose debug helpers for quick end-to-end testing
+    try {
+        window.chatDebug = {
+            async runTest() {
+                const payload = { message: 'Please return test sources [TEST_SOURCES]', conversation_history: [], test_sources: true };
+                const res = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                console.log('[chatDebug] /chat data ->', data);
+                let responseText = data.response || data.answer || '';
+                let sourcesFromJson = data.sources || data.citations || [];
+                if ((!Array.isArray(sourcesFromJson) || sourcesFromJson.length === 0) && Array.isArray(data.citations)) {
+                    sourcesFromJson = flattenCitations(data.citations);
+                }
+                const normalized = normalizeSources(sourcesFromJson);
+                console.log('[chatDebug] normalized sources ->', normalized);
+                if (normalized.length === 0) {
+                    const derived = deriveSourcesFromResponseText(responseText);
+                    console.log('[chatDebug] derived from text ->', derived);
+                    updateSourcesPanel(derived);
+                    addMessage(responseText, 'bot', derived, ++messageId);
+                } else {
+                    updateSourcesPanel(normalized);
+                    addMessage(responseText, 'bot', normalized, ++messageId);
+                }
+            },
+            logState() {
+                const panel = document.getElementById('sourcesPanel');
+                const list = document.getElementById('sourcesList');
+                const header = document.getElementById('sourcesHeaderTitle');
+                console.log('[chatDebug] state ->', {
+                    allConversationSources,
+                    currentSources,
+                    isPanelOpen: panel ? panel.classList.contains('open') : null,
+                    listExists: !!list,
+                    headerExists: !!header,
+                    listHTMLLength: list ? list.innerHTML.length : -1
+                });
+            },
+            panelDom() {
+                const panel = document.getElementById('sourcesPanel');
+                console.log('[chatDebug] panel DOM ->', panel);
+            }
+        };
+        console.log('[chatDebug] available. Try: chatDebug.runTest() or chatDebug.logState()');
+    } catch (e) {}
 });
+
+// --- Helpers to robustly consume backend JSON and sources ---
+function safeParseJson(text) {
+    try { return JSON.parse(text); } catch { return null; }
+}
+
+function normalizeSources(sourcesMaybe) {
+    if (!sourcesMaybe) return [];
+    let arr = Array.isArray(sourcesMaybe) ? sourcesMaybe : [];
+    const norm = [];
+    arr.forEach((s, idx) => {
+        if (!s) return;
+        const uri = s.uri || s.url || s.href || s.link || '';
+        const titleBase = s.title || s.name || s.document || s.filename || '';
+        const title = titleBase || (uri ? uri.split('/').pop().replace(/[#?].*/, '') : `Source ${idx + 1}`);
+        const snippet = s.snippet || s.text || s.quote || s.content || s.excerpt || '';
+        const number = typeof s.number === 'number' ? s.number : (norm.length + 1);
+        norm.push({ number, title, uri, snippet });
+    });
+    return norm;
+}
+
+function markdownToHtml(md) {
+    if (!md || typeof md !== 'string') return '';
+    return md
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        .replace(/\n/g, '<br>');
+}
+
+function deriveSourcesFromResponseText(responseText) {
+    const html = markdownToHtml(responseText || '');
+    try {
+        return extractSourcesFromMessageHtml(html);
+    } catch {
+        return [];
+    }
+}
+
+// Flatten Bedrock-style citations into normalized sources
+function flattenCitations(citations) {
+    if (!Array.isArray(citations)) return [];
+    const byUri = new Map();
+    citations.forEach(c => {
+        const refs = (c && c.retrievedReferences) || [];
+        refs.forEach(ref => {
+            const loc = (ref && ref.location) || {};
+            const contentText = (ref && ref.content && ref.content.text) || '';
+            const snippet = (contentText || '').trim().slice(0, 200);
+            let uri = '';
+            let title = '';
+            if (loc.webLocation && loc.webLocation.url) {
+                uri = loc.webLocation.url;
+            } else if (loc.s3Location && loc.s3Location.uri) {
+                uri = loc.s3Location.uri;
+            }
+            if (ref.metadata && ref.metadata.title) {
+                title = ref.metadata.title;
+            }
+            if (!title) {
+                title = uri ? uri.split('/').pop().replace(/[#?].*/, '') : '';
+            }
+            if (!uri && !snippet) return;
+            const key = uri || `${title}|${snippet}`;
+            if (!byUri.has(key)) {
+                byUri.set(key, { title: title || 'Document', uri, snippet });
+            }
+        });
+    });
+    let n = 1;
+    return Array.from(byUri.values()).map(s => ({ number: n++, ...s }));
+}
 
 function initializeKeyboardShortcuts() {
     document.addEventListener('keydown', function(event) {
@@ -468,15 +586,64 @@ async function sendMessage() {
             throw new Error(`Server error: ${response.status}`);
         }
         
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (e) {
+            // Fallback: try text and coerce to shape
+            const raw = await response.text();
+            console.warn('Response is not valid JSON; using text fallback');
+            data = safeParseJson(raw) || { response: raw };
+        }
         console.log('Received data:', data);
         
-        showTyping(false);
+        // Normalize backend payload: support {response, sources} or {answer, citations}
+        let responseText = (
+            data.response ||
+            data.answer ||
+            (data.output && (data.output.text || data.output.answer)) ||
+            (typeof data === 'string' ? data : '')
+        );
+        let sourcesFromJson = (
+            data.sources ||
+            data.citations ||
+            (data.output && (data.output.sources || data.output.citations)) ||
+            []
+        );
+        console.log('Extracted sourcesFromJson:', sourcesFromJson);
+        // If sourcesFromJson is an object, try common wrappers
+        if (!Array.isArray(sourcesFromJson) && sourcesFromJson && typeof sourcesFromJson === 'object') {
+            if (Array.isArray(sourcesFromJson.references)) {
+                sourcesFromJson = sourcesFromJson.references;
+            } else if (Array.isArray(sourcesFromJson.items)) {
+                sourcesFromJson = sourcesFromJson.items;
+            }
+        }
+        // If citations is a Bedrock structure, flatten it
+        if ((!Array.isArray(sourcesFromJson) || (sourcesFromJson.length === 0)) && Array.isArray(data.citations)) {
+            const flattened = flattenCitations(data.citations);
+            if (flattened.length) sourcesFromJson = flattened;
+        }
+        let normalizedSources = normalizeSources(sourcesFromJson);
+        console.log('Sources from JSON:', sourcesFromJson, 'Normalized:', normalizedSources);
+        
+        // If backend embedded sources into the text but not JSON, attempt extraction
+        if ((!normalizedSources || normalizedSources.length === 0) && responseText) {
+            console.log('Attempting to derive sources from response text');
+            normalizedSources = deriveSourcesFromResponseText(responseText);
+            console.log('Derived sources:', normalizedSources);
+        }
+        
+    // Update panel ASAP so user sees sources even if message rendering fails
+    try { updateSourcesPanel(normalizedSources); } catch (e) { console.warn('Early sources panel update failed:', e); }
+        
+    showTyping(false);
         
         // Add detailed logging to catch any errors
         try {
-            console.log('About to call addMessage with:', data.response);
-            addMessage(data.response, 'bot', data.sources || [], msgId + 1);
+            console.log('About to call addMessage with:', responseText);
+            console.log('normalizedSources:', normalizedSources);
+            addMessage(responseText, 'bot', normalizedSources, msgId + 1);
             console.log('addMessage completed successfully');
             
             // Store this exchange in conversation history
@@ -488,7 +655,7 @@ async function sendMessage() {
             });
             conversationHistory.push({
                 role: 'assistant', 
-                content: data.response
+                content: responseText
             });
             
             // Keep only last 10 exchanges (20 messages) to prevent context from getting too long
@@ -500,7 +667,7 @@ async function sendMessage() {
             
             // Update sources panel
             console.log('About to update sources panel');
-            updateSourcesPanel(data.sources || []);
+            updateSourcesPanel(normalizedSources);
             console.log('Sources panel updated');
             
         } catch (messageError) {
@@ -591,10 +758,20 @@ function retryMessage(message, attachment, errorElement) {
 
 function updateSourcesPanel(newSources) {
     // Add new sources to the accumulated list, avoiding duplicates
+    const wasEmpty = allConversationSources.length === 0;
     if (newSources && newSources.length > 0) {
         newSources.forEach(newSource => {
-            // Check if this source already exists (by URI)
-            const existingSource = allConversationSources.find(source => source.uri === newSource.uri);
+            // Check if this source already exists. Prefer URI when available; otherwise match by snippet+title.
+            let existingSource = null;
+            if (newSource.uri) {
+                existingSource = allConversationSources.find(source => source.uri === newSource.uri);
+            } else {
+                existingSource = allConversationSources.find(source =>
+                    (!source.uri) &&
+                    (source.snippet || '').trim() === (newSource.snippet || '').trim() &&
+                    (source.title || '').trim() === (newSource.title || '').trim()
+                );
+            }
             if (!existingSource) {
                 // Assign a new number based on total count
                 const sourceWithNumber = {
@@ -611,6 +788,8 @@ function updateSourcesPanel(newSources) {
     const sourcesList = document.getElementById('sourcesList');
     const notificationDot = document.getElementById('sourcesNotificationDot');
     const sourcesPanel = document.getElementById('sourcesPanel');
+    const sourcesHeaderTitle = document.getElementById('sourcesHeaderTitle');
+    const sourcesBtn = document.getElementById('sourcesBtn');
     
     if (!allConversationSources || allConversationSources.length === 0) {
         sourcesList.innerHTML = '<p class="no-sources">No sources for this conversation.</p>';
@@ -618,27 +797,52 @@ function updateSourcesPanel(newSources) {
         return;
     }
     
-    // Show notification dot if sources panel is closed and there are new sources
+    // Show notification dot and accent button if panel is closed and there are new sources
     if (!sourcesPanel.classList.contains('open') && newSources && newSources.length > 0) {
         showSourcesNotification();
+        if (sourcesBtn) sourcesBtn.style.background = 'rgba(255,255,255,0.35)';
     }
     
     let sourcesHTML = '';
     allConversationSources.forEach((source, index) => {
-        let linkUrl = source.uri;
-        if (source.snippet && source.snippet.length > 5) {
-            linkUrl = `${source.uri}#:~:text=${encodeURIComponent(source.snippet)}`;
+        let linkUrl = source.uri || '';
+        if (source.uri && source.snippet && source.snippet.length > 5) {
+            // Clean and encode the snippet for the text fragment
+            const cleanSnippet = source.snippet.trim().replace(/[\r\n]+/g, ' ').substring(0, 150);
+            linkUrl = `${source.uri}#:~:text=${encodeURIComponent(cleanSnippet)}`;
         }
-        
+
+        // Build URL section depending on availability
+        const urlSection = source.uri
+            ? `<div class="source-url"><a href="${linkUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${source.uri}</a></div>`
+            : `<div class="source-url no-link">No link available</div>`;
+
+        // For context menu, when no URL, pass empty string and only enable highlight
+        const safeLinkForMenu = (linkUrl || '').replace(/'/g, "\\'");
+    const hasUrl = !!source.uri;
+        const onClick = hasUrl
+            ? `showSourceContextMenu(event, ${index}, '${safeLinkForMenu}')`
+            : `highlightSource(${index});`;
+
         sourcesHTML += `
-            <div class="source-item" data-source-index="${index}" data-source-url="${linkUrl}" role="button" tabindex="0" aria-label="Source: ${source.title}" onclick="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" oncontextmenu="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" style="position: relative;">
-                <div class="source-title">[${source.number}] ${source.title}</div>
+            <div class="source-item" id="source-${source.number}" data-source-index="${index}" data-source-url="${linkUrl}" role="button" tabindex="0" aria-label="Source: ${source.title || 'Citation'}" onclick="${onClick}" oncontextmenu="${hasUrl ? `showSourceContextMenu(event, ${index}, '${safeLinkForMenu}')` : 'event.preventDefault(); highlightSource(' + index + ');'}" style="position: relative;">
+                <div class="source-title">[${source.number}] ${source.title || 'Citation'}</div>
                 <div class="source-snippet">${source.snippet || ''}</div>
+                ${urlSection}
             </div>
         `;
     });
     
     sourcesList.innerHTML = sourcesHTML;
+    // Update header count if available
+    if (sourcesHeaderTitle) {
+        sourcesHeaderTitle.textContent = `Sources (${allConversationSources.length})`;
+    }
+    
+    // On first arrival of sources, automatically open the panel for visibility
+    if (wasEmpty && allConversationSources.length > 0 && !sourcesPanel.classList.contains('open')) {
+        toggleSourcesPanel();
+    }
     
     // Add keyboard support for source items
     document.querySelectorAll('.source-item').forEach(item => {
@@ -677,20 +881,28 @@ function highlightSource(sourceIndex) {
         sourceItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     
-    // Find and highlight corresponding link in messages
+    // Find and highlight corresponding link(s) in messages by URI or number
     document.querySelectorAll('.footnote-link').forEach(link => {
         link.style.backgroundColor = 'transparent';
         link.style.fontWeight = '500';
     });
+
+    const src = currentSources[sourceIndex] || {};
+    const targetLinks = [];
+    document.querySelectorAll('.footnote-link').forEach(link => {
+        const byIndex = link.getAttribute('data-source-index') === String(sourceIndex);
+        const byUri = src.uri && link.getAttribute('data-source-uri') === src.uri;
+        const byNumber = link.textContent && link.textContent.trim() === `[${src.number}]`;
+        if (byIndex || byUri || byNumber) targetLinks.push(link);
+    });
     
-    const targetLinks = document.querySelectorAll(`.footnote-link[data-source-index="${sourceIndex}"]`);
     targetLinks.forEach(link => {
         link.style.backgroundColor = '#fff3cd';
         link.style.fontWeight = '700';
-        if (targetLinks.length === 1) {
-            link.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
     });
+    if (targetLinks.length === 1) {
+        targetLinks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
     
     // Reset highlighting after a moment
     setTimeout(() => {
@@ -785,6 +997,180 @@ function closeContextMenu() {
     document.removeEventListener('click', closeContextMenu);
 }
 
+function scrollToSource(number) {
+    // Convert footnote number (1,2,3...) to sourceIndex (0,1,2...)
+    const sourceIndex = number - 1;
+    
+    // First, make sure sources panel is open
+    const panel = document.getElementById('sourcesPanel');
+    if (!panel.classList.contains('open')) {
+        toggleSourcesPanel();
+        // Wait for panel to open, then highlight source
+        setTimeout(() => {
+            highlightSource(sourceIndex);
+        }, 300);
+    } else {
+        // Panel is already open, highlight immediately
+        highlightSource(sourceIndex);
+    }
+}
+
+function showMessageSources(messageId, sourceNumber) {
+    console.log(`Looking for source ${sourceNumber} from message ${messageId}`);
+    
+    // Find the message element
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageElement) {
+        console.log('Message not found:', messageId);
+        return;
+    }
+    
+    // First try to get sources from the message's data attribute
+    let sources = [];
+    try {
+        const sourcesData = messageElement.getAttribute('data-sources');
+        if (sourcesData) {
+            sources = JSON.parse(sourcesData);
+        }
+    } catch (e) {
+        console.warn('Failed to parse stored sources:', e);
+    }
+    
+    // If no stored sources, extract from HTML
+    if (!sources || sources.length === 0) {
+        const messageHtml = messageElement.innerHTML;
+        sources = extractSourcesFromMessageHtml(messageHtml);
+    }
+    
+    console.log('Sources for message:', sources);
+    
+    if (sources.length > 0) {
+        // Find the specific source by number
+        const match = sources.find(s => s.number === sourceNumber);
+        if (match && match.uri) {
+            // Construct the link URL with proper text fragment if available
+            let linkUrl = match.uri;
+            if (match.snippet && match.snippet.length > 5) {
+                const cleanSnippet = match.snippet.trim().replace(/[\r\n]+/g, ' ').substring(0, 150);
+                linkUrl = `${match.uri}#:~:text=${encodeURIComponent(cleanSnippet)}`;
+            }
+            try { 
+                window.open(linkUrl, '_blank'); 
+            } catch (e) { 
+                console.debug('Failed to open source link', e); 
+            }
+        }
+        
+        // Update sources panel with all sources from this message
+        updateSourcesPanel(sources);
+        
+        // Open sources panel if needed and highlight the source
+        const panel = document.getElementById('sourcesPanel');
+        if (!panel.classList.contains('open')) {
+            toggleSourcesPanel();
+            setTimeout(() => {
+                highlightSpecificSource(sourceNumber, sources);
+            }, 300);
+        } else {
+            highlightSpecificSource(sourceNumber, sources);
+        }
+    }
+}
+
+function highlightSourceByNumber(sourceNumber) {
+    // Find source by its number (not index)
+    const sourceElements = document.querySelectorAll('.source-item');
+    sourceElements.forEach((element, index) => {
+        element.classList.remove('highlighted');
+        element.setAttribute('aria-selected', 'false');
+        
+        // Check if this source has the matching number
+        const sourceId = element.getAttribute('id');
+        if (sourceId === `source-${sourceNumber}`) {
+            element.classList.add('highlighted');
+            element.setAttribute('aria-selected', 'true');
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    });
+}
+
+function highlightSpecificSource(sourceNumber, sources) {
+    console.log(`Highlighting source ${sourceNumber} from:`, sources);
+    
+    // Find the source in the provided sources array first
+    const sourceObj = sources.find(source => source.number === sourceNumber);
+    if (!sourceObj) {
+        console.log(`Source ${sourceNumber} not found in provided sources list`);
+        return;
+    }
+
+    // Primary mapping: find the panel item by URI (ignore text-fragment differences)
+    const baseUri = (sourceObj.uri || '').split('#')[0];
+    let targetIndex = -1;
+    const items = Array.from(document.querySelectorAll('.source-item'));
+    for (const el of items) {
+        const url = (el.getAttribute('data-source-url') || '').split('#')[0];
+        if (baseUri && url && url === baseUri) {
+            const idxAttr = el.getAttribute('data-source-index');
+            if (idxAttr != null) {
+                targetIndex = parseInt(idxAttr, 10);
+                break;
+            }
+        }
+    }
+
+    // Fallbacks: try matching in currentSources by uri, then by number
+    if (targetIndex === -1 && baseUri) {
+        targetIndex = currentSources.findIndex(s => (s.uri || '').split('#')[0] === baseUri);
+    }
+    if (targetIndex === -1) {
+        targetIndex = currentSources.findIndex(s => s.number === sourceNumber);
+    }
+
+    console.log(`Source ${sourceNumber} mapped to index:`, targetIndex, 'baseUri:', baseUri);
+    if (targetIndex !== -1) {
+        highlightSource(targetIndex);
+        return;
+    }
+
+    // Last resort: try to scroll by number-based id (may not exist if numbers differ)
+    console.log('Falling back to number-based highlight');
+    highlightSourceByNumber(sourceNumber);
+}
+
+function updateSourcesPanelWithSources(sources) {
+    const sourcesList = document.getElementById('sourcesList');
+    const sourcesHeader = document.getElementById('sourcesHeader');
+    
+    if (!sources || sources.length === 0) {
+        sourcesList.innerHTML = '<div class="no-sources">No sources available</div>';
+        sourcesHeader.innerHTML = 'Sources';
+        return;
+    }
+    
+    sourcesHeader.innerHTML = `Sources (${sources.length})`;
+    
+    const sourcesHTML = sources.map((source, index) => {
+        let linkUrl = source.uri;
+        if (source.snippet && source.snippet.length > 5) {
+            linkUrl = `${source.uri}#:~:text=${encodeURIComponent(source.snippet)}`;
+        }
+        
+        return `
+            <div class="source-item" id="source-${source.number}" data-source-index="${index}" data-source-url="${linkUrl}" role="button" tabindex="0" aria-label="Source: ${source.title}" onclick="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" oncontextmenu="showSourceContextMenu(event, ${index}, '${linkUrl.replace(/'/g, "\\'")}')" style="position: relative;">
+                <div class="source-header">
+                    <span class="source-number">[${source.number}]</span>
+                    <span class="source-title">${source.title || 'Document'}</span>
+                </div>
+                ${source.snippet ? `<div class="source-snippet">"${source.snippet}"</div>` : ''}
+                <div class="source-url">${source.uri}</div>
+            </div>
+        `;
+    }).join('');
+    
+    sourcesList.innerHTML = sourcesHTML;
+}
+
 function addMessage(text, sender, sources = [], msgId = null) {
     const messagesContainer = document.getElementById('chatMessages');
     const messageDiv = document.createElement('div');
@@ -793,29 +1179,43 @@ function addMessage(text, sender, sources = [], msgId = null) {
         messageDiv.setAttribute('data-message-id', msgId);
     }
     
+    // Process and validate sources (allow entries without uri to still show in panel)
+    let perMessageSources = Array.isArray(sources) ? sources.filter(s => s) : [];
+    
+    // Store sources on the message element for later retrieval
+    try {
+        if (perMessageSources.length > 0) {
+            messageDiv.setAttribute('data-sources', JSON.stringify(perMessageSources));
+        }
+    } catch (e) {
+        console.warn('Failed to store sources on message:', e);
+    }
+    
     console.log('Processing message:', text);
     console.log('Sources received:', sources);
     
     let messageContent = text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
         .replace(/\n/g, '<br>');
     
     console.log('After markdown conversion:', messageContent);
     
-    if (sources && sources.length > 0) {
-        console.log('Processing sources for footnotes');
-        sources.forEach((source, index) => {
-            console.log('Processing source:', source);
-            // Keep the [number] pattern but make it clickable
-            const footnoteRegex = new RegExp(`\\[${source.number}\\]`, 'g');
-            let linkUrl = source.uri;
-            if (source.snippet && source.snippet.length > 5) {
-                linkUrl = `${source.uri}#:~:text=${encodeURIComponent(source.snippet)}`;
-            }
-            messageContent = messageContent.replace(footnoteRegex, 
-                `<a href="${linkUrl}" class="footnote-link" target="_blank" rel="noopener noreferrer" title="${source.title} - ${source.snippet || ''}" data-source-index="${index}" onclick="event.preventDefault(); highlightSource(${index}); window.open('${linkUrl}', '_blank');" aria-label="Source ${source.number}: ${source.title}">[${source.number}]</a>`);
-        });
-    }
+    // Create footnote links with proper source references
+    messageContent = messageContent.replace(/\[(\d+)\]/g, function(match, number) {
+        const messageId = msgId || Date.now();
+        const sourceNum = parseInt(number);
+        // Find corresponding source
+        const source = perMessageSources.find(s => s.number === sourceNum);
+        let title = source ? `View source ${number}: ${source.title || source.uri}` : `Source ${number}`;
+        const dataUriAttr = source && source.uri ? ` data-source-uri="${source.uri.replace(/"/g, '&quot;')}"` : '';
+        return `<a href="#source-${number}" 
+            class="footnote-link" 
+            data-source-index="${sourceNum - 1}"
+            ${dataUriAttr}
+            onclick="showMessageSources('${messageId}', ${number}); return false;" 
+            title="${title}">${match}</a>`;
+    });
     
     console.log('Final message content:', messageContent);
     messageDiv.innerHTML = messageContent;
@@ -824,6 +1224,27 @@ function addMessage(text, sender, sources = [], msgId = null) {
     
     // Update scroll button visibility
     updateScrollButton();
+    
+    // If this is a bot message with sources, ensure the sources panel is up to date
+    if (sender === 'bot' && perMessageSources.length > 0) {
+        updateSourcesPanel(perMessageSources);
+    }
+
+    // Persist or compute sources for this bot message and update panel if needed
+    if (sender === 'bot') {
+        try {
+            if (!perMessageSources || perMessageSources.length === 0) {
+                perMessageSources = extractSourcesFromMessageHtml(messageDiv.innerHTML);
+            }
+            if (perMessageSources && perMessageSources.length > 0) {
+                try { messageDiv.setAttribute('data-sources', JSON.stringify(perMessageSources)); } catch {}
+                // If backend didn't already update the panel, update with extracted ones
+                updateSourcesPanel(perMessageSources);
+            }
+        } catch (e) {
+            console.warn('Auto-extraction of sources failed:', e);
+        }
+    }
 }
 
 function showTyping(show) {
@@ -836,4 +1257,157 @@ function showTyping(show) {
         typingIndicator.style.display = 'none';
     }
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Helper: extract sources array from a bot message's HTML content
+function extractSourcesFromMessageHtml(messageHtml) {
+    try {
+        // Build a DOM we can query for anchors (to keep href)
+        const container = document.createElement('div');
+        container.innerHTML = messageHtml;
+
+        // Try to locate the Sources section by finding a <strong>Sources:</strong> marker
+        let sourcesStartNode = null;
+        const strongs = container.querySelectorAll('strong');
+        strongs.forEach(s => {
+            const text = (s.textContent || '').trim().toLowerCase();
+            if (!sourcesStartNode && text.startsWith('sources')) {
+                sourcesStartNode = s;
+            }
+        });
+
+        // Take the HTML after the marker; otherwise use entire container
+        let htmlAfterMarker = '';
+        if (sourcesStartNode) {
+            // Collect following siblings as HTML
+            let node = sourcesStartNode.nextSibling;
+            while (node) {
+                htmlAfterMarker += node.outerHTML || node.textContent || '';
+                node = node.nextSibling;
+            }
+        } else {
+            htmlAfterMarker = container.innerHTML;
+        }
+
+        // Split by <br> boundaries to approximate original lines
+        const lineHtmls = htmlAfterMarker
+            .split(/<br\s*\/?\s*>/i)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        const extractedSources = [];
+        lineHtmls.forEach(lineHtml => {
+            // Create a per-line DOM to extract text and the first anchor href
+            const lineDiv = document.createElement('div');
+            lineDiv.innerHTML = lineHtml;
+            const lineText = (lineDiv.textContent || '').trim();
+
+            // Must start with [n]
+            const numMatch = lineText.match(/^\[(\d+)\]/);
+            if (!numMatch) return;
+            const sourceNum = parseInt(numMatch[1]);
+
+            // Parse both formats:
+            // New format: [1] The title of the page — URL
+            // Old format: [1] "quote text" — URL
+            const afterNumber = lineText.replace(/^\[\d+\]\s*/, '');
+            
+            // Check for the new title format first
+            const titleUrlMatch = afterNumber.match(/^(.+?)\s*—\s*(.+)$/);
+            let snippet = '';
+            let url = '';
+            let title = '';
+            
+            if (titleUrlMatch) {
+                // New format: [1] Title — URL
+                title = titleUrlMatch[1].trim();
+                url = titleUrlMatch[2].trim();
+                
+                // Clean up URLs - remove line number fragments like #L23-L27
+                if (url.includes('#L')) {
+                    url = url.split('#L')[0];
+                }
+                
+                // Remove quotes if present (for old format compatibility)
+                if (title.startsWith('"') && title.endsWith('"')) {
+                    snippet = title.slice(1, -1); // Use quoted text as snippet
+                    title = ''; // Will be generated below
+                } else {
+                    snippet = title; // Use title as snippet for now
+                }
+            } else {
+                // Fallback: entire text after [n] is the snippet
+                snippet = afterNumber.trim();
+                
+                // Look for any anchor with href (not just http)
+                const anchor = lineDiv.querySelector('a[href]');
+                url = anchor ? anchor.getAttribute('href') : '';
+                
+                // If it's an internal anchor, look for markdown links in the text
+                if (!url || url.startsWith('#')) {
+                    // Look for markdown link pattern [text](url)
+                    const markdownMatch = lineText.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                    if (markdownMatch) {
+                        url = markdownMatch[2];
+                    }
+                }
+            }
+            
+            // Create a meaningful title based on the snippet content (only if we don't have one)
+            if (!title && snippet) {
+                const lowerSnippet = snippet.toLowerCase();
+                if (lowerSnippet.includes('openccc')) {
+                    title = 'OpenCCC Documentation';
+                } else if (lowerSnippet.includes('cccapply')) {
+                    title = 'CCCApply Information';
+                } else if (lowerSnippet.includes('mypath')) {
+                    title = 'CCC MyPath Documentation';
+                } else if (lowerSnippet.includes('cccid')) {
+                    title = 'CCCID System Documentation';
+                } else if (lowerSnippet.includes('career coach')) {
+                    title = 'Career Coach Information';
+                } else {
+                    // Use first few words of snippet as title
+                    const words = snippet.split(' ').slice(0, 4).join(' ');
+                    title = words.length > 20 ? words + '...' : words;
+                }
+            }
+            
+            // Final fallback for title
+            if (!title) {
+                title = `Source ${sourceNum}`;
+            }
+
+            // Only create fallback URLs if we have no URL at all
+            if (!url && snippet) {
+                console.warn('No URL found for source, using fallback:', snippet.substring(0, 50));
+                // Try to detect the system and create a reasonable fallback
+                const baseUrl = 'https://docs.cccnext.net';
+                const lowerSnippet = snippet.toLowerCase();
+                if (lowerSnippet.includes('openccc')) {
+                    url = `${baseUrl}/openccc`;
+                } else if (lowerSnippet.includes('cccapply')) {
+                    url = `${baseUrl}/cccapply`;
+                } else if (lowerSnippet.includes('mypath')) {
+                    url = `${baseUrl}/mypath`;
+                } else if (lowerSnippet.includes('cccid')) {
+                    url = `${baseUrl}/identity`;
+                } else {
+                    url = `${baseUrl}/documentation`;
+                }
+            }
+
+            extractedSources.push({
+                number: sourceNum,
+                snippet,
+                uri: url,
+                title: title
+            });
+        });
+
+        return extractedSources;
+    } catch (e) {
+        console.warn('Failed to parse sources from message HTML:', e);
+        return [];
+    }
 }
